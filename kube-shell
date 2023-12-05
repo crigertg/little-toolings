@@ -1,0 +1,40 @@
+#!/bin/bash
+
+print_usage() {
+    echo "Usage: $0 -n <namespace> <podname> <container>"
+    echo "  -n: Specify the namespace"
+    echo "  <podname>: Specify the pod name"
+    echo "  <container>: Specify the container"
+    echo
+    echo "If <podname> or <container> is not specified, fzf will be used to select one"
+}
+
+while getopts "n:h" flag; do
+case "$flag" in
+    n) NAMESPACE=$OPTARG;;
+    h) print_usage; exit 0;;
+    *) echo "invalid flag"; print_usage; exit 1;;
+esac
+done
+
+if ! which fzf > /dev/null; then
+    echo "ERR: fzf not installed or not in PATH" >& 2
+    exit 1
+fi
+
+PODNAME="${*:$OPTIND:1}"
+CONTAINER="${*:$OPTIND+1:1}"
+
+if [ -z "${NAMESPACE}" ]; then
+    NAMESPACE=$(kubectl config get-contexts --no-headers | grep '\*' | grep -Eo '\S+$')
+fi
+
+if [ -z "${PODNAME}" ]; then
+    PODNAME=$(kubectl get pods --no-headers -o custom-columns=POD:.metadata.name -n "${NAMESPACE}" | fzf)
+fi
+
+if [ -z "${CONTAINER}" ]; then
+    CONTAINER=$(kubectl get pod "${PODNAME}" -o json -n "${NAMESPACE}" | jq -r '.spec.containers[].name' | fzf)
+fi
+
+kubectl exec "${PODNAME}" "${CONTAINER}" -n "${NAMESPACE}" -ti -- /bin/sh
